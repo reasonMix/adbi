@@ -93,3 +93,8 @@ epoll_wait() called
 removing hook for epoll_wait()
 ```
 
+ps |grep com.android.phone
+setenforce 0
+./mprop ro.debuggable 1
+./hijack -d -p 15308 -l /data/local/tmp/libexample.so
+

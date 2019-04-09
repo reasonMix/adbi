@@ -34,8 +34,8 @@
 int debug = 0;
 int zygote = 0;
 int nomprotect = 0;
-unsigned int stack_start;
-unsigned int stack_end;
+unsigned long long stack_start;
+unsigned long long stack_end;
 
 /* memory map for libraries */
 #define MAX_NAME_LEN 256
@@ -47,7 +47,7 @@ struct mm {
 
 typedef struct symtab *symtab_t;
 struct symlist {
-	Elf32_Sym *sym;       /* symbols */
+	Elf64_Sym *sym;       /* symbols */
 	char *str;            /* symbol strings */
 	unsigned num;         /* number of symbols */
 };
@@ -69,7 +69,7 @@ xmalloc(size_t size)
 }
 
 static struct symlist *
-get_syms(int fd, Elf32_Shdr *symh, Elf32_Shdr *strh)
+get_syms(int fd, Elf64_Shdr *symh, Elf64_Shdr *strh)
 {
 	struct symlist *sl, *ret;
 	int rv;
@@ -80,14 +80,14 @@ get_syms(int fd, Elf32_Shdr *symh, Elf32_Shdr *strh)
 	sl->sym = NULL;
 
 	/* sanity */
-	if (symh->sh_size % sizeof(Elf32_Sym)) { 
+	if (symh->sh_size % sizeof(Elf64_Sym)) { 
 		printf("elf_error\n");
 		goto out;
 	}
 
 	/* symbol table */
-	sl->num = symh->sh_size / sizeof(Elf32_Sym);
-	sl->sym = (Elf32_Sym *) xmalloc(symh->sh_size);
+	sl->num = symh->sh_size / sizeof(Elf64_Sym);
+	sl->sym = (Elf64_Sym *) xmalloc(symh->sh_size);
 	rv = pread(fd, sl->sym, symh->sh_size, symh->sh_offset);
 	if (0 > rv) {
 		//perror("read");
@@ -120,10 +120,10 @@ do_load(int fd, symtab_t symtab)
 {
 	int rv;
 	size_t size;
-	Elf32_Ehdr ehdr;
-	Elf32_Shdr *shdr = NULL, *p;
-	Elf32_Shdr *dynsymh, *dynstrh;
-	Elf32_Shdr *symh, *strh;
+	Elf64_Ehdr ehdr;
+	Elf64_Shdr *shdr = NULL, *p;
+	Elf64_Shdr *dynsymh, *dynstrh;
+	Elf64_Shdr *symh, *strh;
 	char *shstrtab = NULL;
 	int i;
 	int ret = -1;
@@ -134,22 +134,23 @@ do_load(int fd, symtab_t symtab)
 		//perror("read");
 		goto out;
 	}
+	printf("do_load is rv %d %d \n",rv,sizeof(ehdr)); 
 	if (rv != sizeof(ehdr)) {
-		printf("elf error\n");
+		printf("11111 elf error\n");
 		goto out;
 	}
 	if (strncmp(ELFMAG, ehdr.e_ident, SELFMAG)) { /* sanity */
 		printf("not an elf\n");
 		goto out;
 	}
-	if (sizeof(Elf32_Shdr) != ehdr.e_shentsize) { /* sanity */
-		printf("elf error\n");
+	if (sizeof(Elf64_Shdr) != ehdr.e_shentsize) { /* sanity */
+		printf("22222 elf error %d %d \n",sizeof(Elf64_Shdr) ,ehdr.e_shentsize);
 		goto out;
 	}
 
 	/* section header table */
 	size = ehdr.e_shentsize * ehdr.e_shnum;
-	shdr = (Elf32_Shdr *) xmalloc(size);
+	shdr = (Elf64_Shdr *) xmalloc(size);
 	rv = pread(fd, shdr, size, ehdr.e_shoff);
 	if (0 > rv) {
 		//perror("read");
@@ -233,6 +234,7 @@ out:
 static symtab_t
 load_symtab(char *filename)
 {
+	printf("call load_symtab filename is %s \n",filename);
 	int fd;
 	symtab_t symtab;
 
@@ -241,7 +243,7 @@ load_symtab(char *filename)
 
 	fd = open(filename, O_RDONLY);
 	if (0 > fd) {
-		//perror("open");
+		printf("load_symtab open error %s \n",filename);
 		return NULL;
 	}
 	if (0 > do_load(fd, symtab)) {
@@ -257,10 +259,12 @@ load_symtab(char *filename)
 static int
 load_memmap(pid_t pid, struct mm *mm, int *nmmp)
 {
-	char raw[80000]; // this depends on the number of libraries an executable uses
+	printf("pid is %d \n", pid);
+
+	char raw[80000 * 10]; // this depends on the number of libraries an executable uses
 	char name[MAX_NAME_LEN];
 	char *p;
-	unsigned long start, end;
+	unsigned long long start, end;
 	struct mm *m;
 	int nmm = 0;
 	int fd, rv;
@@ -296,11 +300,18 @@ load_memmap(pid_t pid, struct mm *mm, int *nmmp)
 	p = strtok(raw, "\n");
 	m = mm;
 	while (p) {
+		//printf("--------------------------------------\n");
+		//printf("##### p is %s \n", p);
 		/* parse current map line */
-		rv = sscanf(p, "%08lx-%08lx %*s %*s %*s %*s %s\n",
+		rv = sscanf(p, "%10llx-%10llx %*s %*s %*s %*s %s\n",
 			    &start, &end, name);
 
+		printf("start:%lld end:%lld\n", start,end);
+
 		p = strtok(NULL, "\n");
+
+		//printf("#### name is %s \n", name);
+		//printf("#### rv is %d \n",rv);
 
 		if (rv == 2) {
 			m = &mm[nmm++];
@@ -353,6 +364,8 @@ find_libc(char *name, int len, unsigned long *start,
 	struct mm *m;
 	char *p;
 	for (i = 0, m = mm; i < nmm; i++, m++) {
+		//printf("###### m->name is %s \n", m->name);
+
 		if (!strcmp(m->name, MEMORY_ONLY))
 			continue;
 		p = strrchr(m->name, '/');
@@ -418,7 +431,7 @@ static int
 lookup2(struct symlist *sl, unsigned char type,
 	char *name, unsigned long *val)
 {
-	Elf32_Sym *p;
+	Elf64_Sym *p;
 	int len;
 	int i;
 
@@ -426,7 +439,7 @@ lookup2(struct symlist *sl, unsigned char type,
 	for (i = 0, p = sl->sym; i < sl->num; i++, p++) {
 		//printf("name: %s %x\n", sl->str+p->st_name, p->st_value);
 		if (!strncmp(sl->str+p->st_name, name, len)
-		    && ELF32_ST_TYPE(p->st_info) == type) {
+		    && ELF64_ST_TYPE(p->st_info) == type) {
 			//if (p->st_value != 0) {
 			*val = p->st_value;
 			return 0;
@@ -456,7 +469,8 @@ lookup_func_sym(symtab_t s, char *name, unsigned long *val)
 static int
 find_name(pid_t pid, char *name, unsigned long *addr)
 {
-	struct mm mm[1000];
+	printf("call find_name name is %s \n", name);
+	struct mm mm[1000 * 5];
 	unsigned long libcaddr;
 	int nmm;
 	char libc[256];
@@ -510,13 +524,26 @@ static int find_linker(pid_t pid, unsigned long *addr)
 static int
 write_mem(pid_t pid, unsigned long *buf, int nlong, unsigned long pos)
 {
+	#if 0
 	unsigned long *p;
 	int i;
 
-	for (p = buf, i = 0; i < nlong; p++, i++)
-		if (0 > ptrace(PTRACE_POKETEXT, pid, (void *)(pos+(i*4)), (void *)*p))
+	for (p = buf, i = 0; i < nlong; p++, i++) {
+		int ret = ptrace(PTRACE_POKETEXT, pid, (void *)(pos+(i*8)), (void *)*p);
+		printf("#### write_mem ret is %d \n", ret);
+
+		if (0 > ret) {
 			return -1;
+		}
+	}
 	return 0;
+	#else
+	unsigned long long test = 100;
+	printf("pos is %10llx\n", pos);
+	int ret = ptrace(PTRACE_POKETEXT, pid, pos, (void *)test);
+	printf("#### write_mem ret is %d \n", ret);
+	return 0;
+	#endif
 }
 
 static int
@@ -624,10 +651,11 @@ int main(int argc, char *argv[])
 				debug = strtol(optarg, NULL, 0);
 			break;
 			case 'l':
+				printf("sizeof(unsigned long) is %d\n", sizeof(unsigned long));
 				n = strlen(optarg)+1;
-				n = n/4 + (n%4 ? 1 : 0);
-				arg = malloc(n*sizeof(unsigned long));
-				memcpy(arg, optarg, n*4);
+				n = n/8 + (n%8 ? 1 : 0);
+				arg = malloc(2*n*sizeof(unsigned long));
+				memcpy(arg, optarg, 2*n*8);
 				break;
 			case 'm':
 				nomprotect = 1;
@@ -654,6 +682,9 @@ int main(int argc, char *argv[])
 		fprintf(stderr, HELPSTR, argv[0]);
 		exit(0);
 	}
+
+	printf("pid is %d \n", pid);
+	debug = 1;
 
 	if (!nomprotect) {
 		if (0 > find_name(pid, "mprotect", &mprotectaddr)) {
@@ -810,15 +841,17 @@ int main(int argc, char *argv[])
 	sc[16] = regs.ARM_pc;
 	sc[17] = regs.ARM_sp;
 	sc[19] = dlopenaddr;
+
+	printf("$$########### ##### regs.ARM_sp is %d \n", sizeof(regs.ARM_sp));
 		
 	if (debug) {
-		printf("pc=%lx lr=%lx sp=%lx fp=%lx\n", regs.ARM_pc, regs.ARM_lr, regs.ARM_sp, regs.ARM_fp);
-		printf("r0=%lx r1=%lx\n", regs.ARM_r0, regs.ARM_r1);
-		printf("r2=%lx r3=%lx\n", regs.ARM_r2, regs.ARM_r3);
+		printf("pc=%10llx lr=%10llx sp=%10llx fp=%10llx\n", regs.ARM_pc, regs.ARM_lr, regs.ARM_sp, regs.ARM_fp);
+		printf("r0=%10llx r1=%10llx\n", regs.ARM_r0, regs.ARM_r1);
+		printf("r2=%10llx r3=%10llx\n", regs.ARM_r2, regs.ARM_r3);
 	}
 
 	// push library name to stack
-	libaddr = regs.ARM_sp - n*4 - sizeof(sc);
+	libaddr = regs.ARM_sp - n*8 - sizeof(sc);
 	sc[18] = libaddr;	
 	//sc[14] = libaddr;
 	//printf("libaddr: %x\n", libaddr);
@@ -829,7 +862,7 @@ int main(int argc, char *argv[])
 		stack_end = stack_start + strtol(argv[4], NULL, 0);
 	}
 	if (debug)
-		printf("stack: 0x%x-0x%x leng = %d\n", stack_start, stack_end, stack_end-stack_start);
+		printf("stack: 0x%10llx-0x%10llx leng = %lld\n", stack_start, stack_end, stack_end-stack_start);
 	
 	// write library name to stack
 	if (0 > write_mem(pid, (unsigned long*)arg, n, libaddr)) {

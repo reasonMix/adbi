@@ -1,1 +1,4 @@
 hijack/obj/local/arm64-v8a/objs
+instruments/example/obj
+instruments/base/obj/local/armeabi-v7a/objs
+instruments/base/obj

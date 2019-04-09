@@ -106,18 +106,25 @@ int hook(struct hook_t *h, int pid, char *libname, char *funcname, void *hook_ar
 		h->orig = addr;	
 		h->jumpt[1] = 0xb4;
 		h->jumpt[0] = 0x60; // push {r5,r6}
+
 		h->jumpt[3] = 0xa5;
 		h->jumpt[2] = 0x03; // add r5, pc, #12
+
 		h->jumpt[5] = 0x68;
 		h->jumpt[4] = 0x2d; // ldr r5, [r5]
+
 		h->jumpt[7] = 0xb0;
 		h->jumpt[6] = 0x02; // add sp,sp,#8
+
 		h->jumpt[9] = 0xb4;
 		h->jumpt[8] = 0x20; // push {r5}
+
 		h->jumpt[11] = 0xb0;
 		h->jumpt[10] = 0x81; // sub sp,sp,#4
+
 		h->jumpt[13] = 0xbd;
 		h->jumpt[12] = 0x20; // pop {r5, pc}
+		
 		h->jumpt[15] = 0x46;
 		h->jumpt[14] = 0xaf; // mov pc, r5 ; just to pad to 4 byte boundary
 		memcpy(&h->jumpt[16], (unsigned char*)&h->patch, sizeof(unsigned int));
